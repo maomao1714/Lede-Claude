@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
 
-    # ★ 关键：给工作流写入权限，允许创建 Release 和上传文件
+    # ★ 关键修复：给工作流写入权限，允许创建 Release 和上传文件
     permissions:
       contents: write
 
@@ -127,7 +127,9 @@ jobs:
         run: |
           cd lede/bin/targets/*/*
           rm -rf packages
-          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "FIRMWARE=$(pwd)" >> $GITHUB_ENV
+          # 调试输出，方便查看生成的文件
+          ls -lh
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 上传固件到 Artifacts
@@ -149,17 +151,21 @@ jobs:
           🔧 源码：Lean's LEDE ($REPO_BRANCH)
 
           ✅ 已包含功能：
-          - Web 管理界面 (Design 主题) 开机即用
-          - 无线默认开启 (SSID: WH3000-栋仔)
+          - Web 管理界面 (Design 主题)
           - Docker 容器支持
-          - Lucky / Qmodem / OpenVPN / Samba 等
+          - Lucky (内网穿透/DDNS)
+          - Qmodem (4G/5G模块)
+          - OpenVPN 服务端
+          - DDNS (阿里云/DNSPod)
+          - Samba4 文件共享
+          - 带宽监控
 
           📌 刷机注意：请备份当前配置再刷入！
           EOF
 
       - name: 上传固件到 GitHub Release
         uses: softprops/action-gh-release@v1
-        if: steps.tag.outputs.status == 'success'
+        if: steps.tag.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
         with:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           body_path: release.txt
