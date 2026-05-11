@@ -9,11 +9,9 @@
 echo "正在添加 Design 主题..."
 THEME_DIR="package/luci-theme-design"
 mkdir -p $THEME_DIR
-# 下载主题源码
 git clone --depth=1 --single-branch --branch openwrt-24.10 \
   https://github.com/immortalwrt/luci.git temp_luci_design
 cp -r temp_luci_design/themes/luci-theme-design/* $THEME_DIR/
-# 修正 Makefile 中的路径引用
 sed -i 's|../../luci.mk|$(TOPDIR)/feeds/luci/luci.mk|g' $THEME_DIR/Makefile 2>/dev/null || true
 rm -rf temp_luci_design
 echo "Design 主题已植入"
@@ -24,43 +22,35 @@ echo "Design 主题已植入"
 sed -i 's/OpenWrt/WH3000/g' package/base-files/files/bin/config_generate
 
 # =====================================================
-# ★ 3. 修正默认主题为 Design
+# ★ 3. 修改默认主题为 Design（LEDE 标准 luci 集合包）
 # =====================================================
 if [ -f "feeds/luci/collections/luci/Makefile" ]; then
     sed -i 's/luci-theme-bootstrap/luci-theme-design/g' feeds/luci/collections/luci/Makefile
 fi
 
 # =====================================================
-# ★ 4. uhttpd 配置：Lua 后端 + 性能优化
+# ★ 4. 创建默认无线配置（确保刷机后 Wi-Fi 自动开启）
 # =====================================================
 mkdir -p files/etc/config
-cat > files/etc/config/uhttpd << 'EOF'
-config uhttpd main
-    list listen_http  0.0.0.0:80
-    list listen_http  [::]:80
-    list listen_https 0.0.0.0:443
-    list listen_https [::]:443
+cat > files/etc/config/wireless << 'EOF'
+config wifi-device 'radio0'
+        option type 'mac80211'
+        option channel 'auto'
+        option band '2g'
+        option htmode 'HT20'
+        option disabled '0'
 
-    option max_requests     10
-    option max_connections  100
-
-    option cert           /etc/uhttpd.crt
-    option key            /etc/uhttpd.key
-
-    option http_keepalive 20
-    option script_timeout 60
-    option network_timeout 30
-    option tcp_fastopen   1
-
-    option ubus_prefix    /ubus
-
-    # 使用稳定 Lua 后端
-    list lua_prefix        /cgi-bin/luci
-    option lua_handler     /usr/lib/lua/luci/uvcgi.lua
+config wifi-iface 'default_radio0'
+        option device 'radio0'
+        option network 'lan'
+        option mode 'ap'
+        option ssid 'WH3000-栋仔'
+        option encryption 'psk2'
+        option key '1234567890'
 EOF
 
 # =====================================================
-# ★ 5. 提升 rpcd 超时
+# ★ 5. 提升 rpcd 超时（防止管理界面操作超时）
 # =====================================================
 mkdir -p files/etc/config
 if [ ! -f files/etc/config/rpcd ]; then
@@ -86,7 +76,8 @@ cat > files/etc/banner << 'EOF'
 -------------------------------------------------
 EOF
 
+# ★ 注意：不再手动生成 uhttpd 配置，交给 LEDE 的 luci-base 自动处理
 echo "✅ DIY 设置完成"
-echo "   - 已植入 luci-theme-design"
-echo "   - Web 管理使用 Lua 后端，稳定秒开"
-echo "   - 栋仔专属 Banner 已就绪"
+echo "   - Design 主题已植入并设为默认"
+echo "   - 无线默认开启 (SSID: WH3000-栋仔)"
+echo "   - uhttpd 使用 LEDE 标准配置，杜绝 Web 404"
