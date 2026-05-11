@@ -1,7 +1,6 @@
-name: 编译 OpenWrt 固件 (华思飞 WH3000)
+name: 编译 LEDE 固件 (华思飞 WH3000)
 
 on:
-  # 方式1：手动触发（推荐小白使用）
   workflow_dispatch:
     inputs:
       ssh:
@@ -13,70 +12,37 @@ on:
           - 'false'
           - 'true'
 
-  # 方式2：推送代码时自动触发（可选，注释掉则不自动触发）
-  # push:
-  #   branches:
-  #     - main
-  #   paths:
-  #     - 'optimized.config'
-
-  # 方式3：定时自动编译（每周日凌晨2点，可选）
-  # schedule:
-  #   - cron: '0 18 * * 0'  # UTC时间，对应北京时间周日凌晨2点
-
 env:
-  # =====================================================
-  # ★ 重要配置区 - 根据你的情况修改 ★
-  # =====================================================
-  
-  # OpenWrt 源码地址（使用 ImmortalWrt，对国内硬件支持更好）
-  REPO_URL: https://github.com/immortalwrt/immortalwrt
-  REPO_BRANCH: openwrt-24.10
-  
-  # 你的配置文件名（就是本仓库里的文件名）
+  # ★ 使用 Lean's LEDE 源码
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+
   CONFIG_FILE: optimized.config
-  
-  # 自定义脚本文件名
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  
-  # 是否上传固件到 GitHub Releases
-  UPLOAD_RELEASE: true
-  
-  # 是否上传编译产物（所有文件）
-  UPLOAD_ARTIFACTS: true
-  
-  # 编译完成后是否发送Telegram通知（需要配置secrets，初学者可忽略）
-  SEND_TELEGRAM: false
-  
-  # 时区
-  TZ: Asia/Shanghai
 
-# ★ 授予 Actions 写入权限（修复上传 Release 403 错误）
-permissions:
-  contents: write
+  UPLOAD_RELEASE: true
+  UPLOAD_ARTIFACTS: true
+  SEND_TELEGRAM: false
+  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    # 防止编译超时（GitHub Actions最长6小时）
     timeout-minutes: 360
 
+    # ★ 关键修复：给工作流写入权限，允许创建 Release 和上传文件
+    permissions:
+      contents: write
+
     steps:
-      # =====================================================
-      # 步骤1：检出你的仓库代码
-      # =====================================================
       - name: 检出仓库
         uses: actions/checkout@v4
 
-      # =====================================================
-      # 步骤2：初始化编译环境
-      # =====================================================
       - name: 初始化编译环境
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          # 清理 GitHub Actions 默认环境中不需要的软件，释放磁盘空间
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y \
@@ -91,73 +57,41 @@ jobs:
             squashfs-tools subversion swig texinfo uglifyjs unzip vim wget xmlto xxd zlib1g-dev
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
-          # 设置时区
           sudo timedatectl set-timezone "$TZ"
-          # 创建工作目录
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
-      # =====================================================
-      # 步骤3：释放磁盘空间（重要！防止空间不足）
-      # =====================================================
       - name: 释放磁盘空间
         run: |
-          echo "释放前磁盘空间："
-          df -hT
-          # 删除不需要的大文件
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force 2>/dev/null || true
-          echo "释放后磁盘空间："
-          df -hT
 
-      # =====================================================
-      # 步骤4：克隆 OpenWrt 源码
-      # =====================================================
-      - name: 克隆 OpenWrt 源码
+      - name: 克隆 LEDE 源码
         working-directory: /workdir
         run: |
-          git clone $REPO_URL -b $REPO_BRANCH openwrt --single-branch --depth=1
-          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          git clone $REPO_URL -b $REPO_BRANCH lede --single-branch --depth=1
+          ln -sf /workdir/lede $GITHUB_WORKSPACE/lede
 
-      # =====================================================
-      # 步骤5：执行第一个自定义脚本（添加软件源）
-      # =====================================================
       - name: 执行 DIY 脚本第一部分（添加软件源）
         run: |
           chmod +x $DIY_P1_SH
-          cd openwrt
+          cd lede
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
-      # =====================================================
-      # 步骤6：更新并安装软件源
-      # =====================================================
-      - name: 更新并安装软件包列表
+      - name: 更新并安装软件包
         run: |
-          cd openwrt
+          cd lede
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      # =====================================================
-      # 步骤7：复制配置文件并执行第二个自定义脚本
-      # =====================================================
-      - name: 复制配置文件
+      - name: 复制配置文件并执行 DIY 脚本第二部分
         run: |
-          # 将你仓库中的 optimized.config 复制到源码目录
-          [ -e files ] && mv files openwrt/files
-          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-
-      - name: 执行 DIY 脚本第二部分（自定义设置）
-        run: |
+          [ -e files ] && mv files lede/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE lede/.config
           chmod +x $DIY_P2_SH
-          cd openwrt
+          cd lede
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
-      # =====================================================
-      # 步骤8：（可选）SSH 调试 - 仅手动触发且选择true时开启
-      # =====================================================
       - name: SSH 远程调试（可选）
         uses: P3TERX/ssh2actions@v1.0.0
         if: (github.event.inputs.ssh == 'true' && github.event_name == 'workflow_dispatch')
@@ -165,106 +99,67 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
 
-      # =====================================================
-      # 步骤9：加载配置并下载依赖包
-      # =====================================================
       - name: 加载配置
         run: |
-          cd openwrt
-          # defconfig 会自动补全缺失的配置项
+          cd lede
           make defconfig
-          # 显示配置差异（可以看到具体选了哪些包）
           ./scripts/diffconfig.sh
 
       - name: 下载编译依赖包
         run: |
-          cd openwrt
+          cd lede
           make download -j8
-          # 删除下载失败的小文件（通常是错误文件）
-          find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
-      # =====================================================
-      # 步骤10：开始编译！
-      # =====================================================
       - name: 编译固件
         id: compile
         run: |
-          cd openwrt
-          echo "当前目录："
-          ls
-          echo "开始编译，时间：$(date)"
-          echo "CPU核心数：$(nproc)"
-          # 先用全核心编译，失败则用单核重试（单核会输出详细错误）
+          cd lede
           make -j$(nproc) || make -j1 V=s
-          echo "编译完成，时间：$(date)"
           echo "status=success" >> $GITHUB_OUTPUT
-          # 获取设备名称用于后续步骤
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
           echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-      # =====================================================
-      # 步骤11：检查磁盘空间
-      # =====================================================
-      - name: 检查磁盘空间
-        if: (!cancelled())
-        run: df -hT
-
-      # =====================================================
-      # 步骤12：整理固件文件
-      # =====================================================
       - name: 整理固件文件
         id: organize
         if: steps.compile.outputs.status == 'success'
         run: |
-          cd openwrt/bin/targets/*/*
-          # 删除不需要上传的文件（只保留固件镜像）
+          cd lede/bin/targets/*/*
           rm -rf packages
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
-      # =====================================================
-      # 步骤13：上传固件到 Artifacts（临时存储，90天有效）
-      # =====================================================
       - name: 上传固件到 Artifacts
         uses: actions/upload-artifact@v4
         if: steps.organize.outputs.status == 'success' && env.UPLOAD_ARTIFACTS == 'true'
         with:
-          name: OpenWrt_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
+          name: LEDE_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}
           path: ${{ env.FIRMWARE }}
-          # 保留90天
-          retention-days: 90
 
-      # =====================================================
-      # 步骤14：创建 GitHub Release 并上传固件
-      # =====================================================
       - name: 创建 Release 标签
         id: tag
         if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
         run: |
           echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-          # 生成更新日志
           cat > release.txt << EOF
-          📦 华思飞 WH3000 OpenWrt 固件
-          
+          📦 华思飞 WH3000 LEDE 固件
+
           🕒 编译时间：$(date +"%Y年%m月%d日 %H:%M")
-          📱 目标平台：MediaTek Filogic (MT7981)
-          🔧 源码分支：$REPO_BRANCH
-          
+          🔧 源码：Lean's LEDE ($REPO_BRANCH)
+
           ✅ 已包含功能：
-          - Web管理界面 (LuCI Design主题)
+          - 稳定 Web 管理界面 (Design 主题)
           - Docker 容器支持
           - Lucky (内网穿透/DDNS)
-          - Qmodem (4G/5G模块管理)
+          - Qmodem (4G/5G模块)
           - OpenVPN 服务端
           - DDNS (阿里云/DNSPod)
           - Samba4 文件共享
           - 带宽监控
-          
+
           📌 刷机注意：请备份当前配置再刷入！
           EOF
-          echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 上传固件到 GitHub Release
         uses: softprops/action-gh-release@v1
@@ -276,9 +171,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # =====================================================
-      # 步骤15：清理旧的 Releases（只保留最新5个）
-      # =====================================================
       - name: 清理旧的 Releases
         uses: dev-drprasad/delete-older-releases@v0.3.4
         if: env.UPLOAD_RELEASE == 'true'
