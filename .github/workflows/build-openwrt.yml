@@ -13,14 +13,11 @@ on:
           - 'true'
 
 env:
-  # ★ 使用 Lean's LEDE 源码
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
-
   CONFIG_FILE: optimized.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-
   UPLOAD_RELEASE: true
   UPLOAD_ARTIFACTS: true
   SEND_TELEGRAM: false
@@ -30,10 +27,8 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
-
-    # ★ 关键修复：给工作流写入权限，允许创建 Release 和上传文件
     permissions:
-      contents: write
+      contents: write          # 必须，允许创建 Release
 
     steps:
       - name: 检出仓库
@@ -125,10 +120,12 @@ jobs:
         id: organize
         if: steps.compile.outputs.status == 'success'
         run: |
-          cd lede/bin/targets/*/*
+          # 设备固件实际路径（根据你的平台 mediatek/filogic）
+          cd lede/bin/targets/mediatek/filogic
           rm -rf packages
           echo "FIRMWARE=$(pwd)" >> $GITHUB_ENV
-          # 调试输出，方便查看生成的文件
+          # 输出文件列表以便调试
+          echo "固件目录内容："
           ls -lh
           echo "status=success" >> $GITHUB_OUTPUT
 
@@ -146,20 +143,9 @@ jobs:
           echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           cat > release.txt << EOF
           📦 华思飞 WH3000 LEDE 固件
-
           🕒 编译时间：$(date +"%Y年%m月%d日 %H:%M")
           🔧 源码：Lean's LEDE ($REPO_BRANCH)
-
-          ✅ 已包含功能：
-          - Web 管理界面 (Design 主题)
-          - Docker 容器支持
-          - Lucky (内网穿透/DDNS)
-          - Qmodem (4G/5G模块)
-          - OpenVPN 服务端
-          - DDNS (阿里云/DNSPod)
-          - Samba4 文件共享
-          - 带宽监控
-
+          ✅ 已包含功能：Design 主题 / Docker / Lucky / Qmodem / DDNS 等
           📌 刷机注意：请备份当前配置再刷入！
           EOF
 
